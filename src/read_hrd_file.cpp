@@ -17,31 +17,27 @@ void read_hdr_file(const char* hdr_path, HSI_Header* header) {
 
   char line[256];
   while (fgets(line, sizeof(line), hdr_file)) {
-    char* key = strtok(line, " =");
-    char* value = strtok(nullptr, " =");
+    char* key = strtok(line, "=");
+    char* value = strtok(nullptr, "=");
 
     if (!key || !value) continue;
 
-    // Удаление лишних пробелов и символов
     value = strtok(value, " \t\n\r");
 
-    if (strcmp(key, "samples") == 0) {
+    if (strcmp(key, "samples ") == 0) {
       header->samples = atoi(value);
-    } else if (strcmp(key, "lines") == 0) {
+    } else if (strcmp(key, "lines ") == 0) {
       header->lines = atoi(value);
-    } else if (strcmp(key, "bands") == 0) {
+    } else if (strcmp(key, "bands ") == 0) {
       header->bands = atoi(value);
-    } else if (strcmp(key, "data") == 0 &&
-               strcmp(strtok(nullptr, " ="), "type") == 0) {
+    } else if (strcmp(key, "data type ") == 0) {
       header->data_type = atoi(value);
-    } else if (strcmp(key, "interleave") == 0) {
+    } else if (strcmp(key, "interleave ") == 0) {
       strncpy(header->interleave, value, 3);
       header->interleave[3] = '\0';
-    } else if (strcmp(key, "byte") == 0 &&
-               strcmp(strtok(nullptr, " ="), "order") == 0) {
+    } else if (strcmp(key, "byte order ") == 0) {
       header->byte_order = atoi(value);
-    } else if (strcmp(key, "header") == 0 &&
-               strcmp(strtok(nullptr, " ="), "offset") == 0) {
+    } else if (strcmp(key, "header offset ") == 0) {
       header->header_offset = atoi(value);
     }
   }
