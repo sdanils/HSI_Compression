@@ -2,15 +2,13 @@
 #include <cstdlib>  // Для exit, malloc, free
 #include <cstring>  // Для strtok, strcmp
 #include <fstream>
-#include <iostream>
 
 #include "functions.h"
-#include "struct_hsi.h"
+#include "hsi_header.h"
 
-int16_t** load_hsi_data(const char* dat_path, const HSI_Header* header) {
+int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
   FILE* dat_file = fopen(dat_path, "rb");
   if (!dat_file) {
-    std::cerr << "Ошибка: Не удалось открыть файл " << dat_path << std::endl;
     exit(1);
   }
 
@@ -19,7 +17,6 @@ int16_t** load_hsi_data(const char* dat_path, const HSI_Header* header) {
 
   // Проверка типа данных (должен быть int16)
   if (header->data_type != 2) {
-    std::cerr << "Ошибка: Формат данных не int16!" << std::endl;
     exit(1);
   }
 

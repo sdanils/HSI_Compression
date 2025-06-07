@@ -2,16 +2,14 @@
 #include <cstdlib>  // Для exit, malloc, free
 #include <cstring>  // Для strtok, strcmp
 #include <fstream>
-#include <iostream>
 
 #include "functions.h"
-#include "struct_hsi.h"
+#include "hsi_header.h"
 
 // Функция для чтения заголовка .hdr
-void read_hdr_file(const char* hdr_path, HSI_Header* header) {
+void read_hdr_file(const char* hdr_path, hsi_header* header) {
   FILE* hdr_file = fopen(hdr_path, "r");
   if (!hdr_file) {
-    std::cerr << "Ошибка: Не удалось открыть файл " << hdr_path << std::endl;
     exit(1);
   }
 

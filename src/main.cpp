@@ -1,8 +1,9 @@
-#include <iostream>
 #include <string>
 
+#include "compressed_image.h"
+#include "compression_settings.h"
 #include "functions.h"
-#include "struct_hsi.h"
+#include "hsi_header.h"
 
 using namespace std;
 
@@ -10,20 +11,17 @@ int main() {
   const char* hdr_path = "../data/hsi.hdr";
   const char* dat_path = "../data/hsi.gsd";
 
-  HSI_Header header;
+  hsi_header header;
   read_hdr_file(hdr_path, &header);
 
   int16_t** hsi_data = load_hsi_data(dat_path, &header);
+  compressed_image comp_data = {NULL, 0, NULL, NULL, 0};
 
-  int x = 42, y = 0;
-  int pixel_index = y * header.samples + x;
-  std::cout << "Пиксель (" << x << "," << y << "): ";
-  for (int b = 0; b < header.bands; b++) {
-    std::cout << hsi_data[pixel_index][b] << " ";
-  }
-  std::cout << std::endl;
+  compression_settings settings = {26000, 21000};
+  compression(hsi_data, &header, &comp_data, &settings);
 
-  int total_pixels = header.lines * header.samples;
-  free_hsi_data(hsi_data, total_pixels);
+  save_standarts(&comp_data, &header);
+  save_compressed_image(&comp_data);
+
   return 0;
 }
