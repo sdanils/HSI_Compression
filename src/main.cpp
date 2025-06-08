@@ -23,5 +23,8 @@ int main() {
   save_standarts(&comp_data, &header);
   save_compressed_image(&comp_data);
 
+  free_hsi_data(hsi_data, &header);
+  free_compressed_image(&comp_data);
+
   return 0;
 }

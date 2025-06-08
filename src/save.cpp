@@ -5,6 +5,7 @@
 
 #include "compressed_image.h"
 #include "hsi_header.h"
+#include "standart_data.h"
 
 void save_standarts(const compressed_image* img, hsi_header* header,
                     const char* filename = "standarts.txt") {
@@ -21,6 +22,7 @@ void save_standarts(const compressed_image* img, hsi_header* header,
       }
       fout << '\n';
     }
+    fout << ' ';
   }
 }
 
@@ -34,7 +36,7 @@ void save_compressed_image(const compressed_image* img,
   fout << img->size << '\n';
 
   for (int idx = 0; idx < img->size; ++idx) {
-    const match_result* mr = img->image[idx];
+    const standart_data* mr = img->image[idx];
     fout << mr->main << ' ' << mr->additional << ' ' << mr->mse << '\n';
   }
 }

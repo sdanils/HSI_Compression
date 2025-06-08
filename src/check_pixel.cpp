@@ -4,10 +4,10 @@
 
 #include "compression_settings.h"
 #include "functions.h"
-#include "match_resalt.h"
+#include "standart_data.h"
 
 void add_standart(const int16_t* pixel, compressed_image* compressed_data,
-                  int bands, match_result* result) {
+                  int bands, standart_data* result) {
   (compressed_data->hsi_standarts) =
       (int16_t***)realloc(compressed_data->hsi_standarts,
                           (compressed_data->num_ref + 1) * sizeof(int16_t**));
@@ -17,8 +17,6 @@ void add_standart(const int16_t* pixel, compressed_image* compressed_data,
       (int16_t*)malloc(bands * sizeof(int16_t));
   memcpy((compressed_data->hsi_standarts)[compressed_data->num_ref][0], pixel,
          bands * sizeof(int16_t));
-
-  //print_pixel(pixel, 224);
 
   (compressed_data->ref_counts) =
       (int*)realloc(compressed_data->ref_counts,
@@ -33,7 +31,7 @@ void add_standart(const int16_t* pixel, compressed_image* compressed_data,
 
 void add_internal_standart(const int16_t* pixel,
                            compressed_image* compressed_data, int bands,
-                           int best_i, match_result* result) {
+                           int best_i, standart_data* result) {
   int new_j = (compressed_data->ref_counts)[best_i];
   (compressed_data->hsi_standarts)[best_i] = (int16_t**)realloc(
       (compressed_data->hsi_standarts)[best_i], (new_j + 1) * sizeof(int16_t*));
@@ -43,8 +41,6 @@ void add_internal_standart(const int16_t* pixel,
          bands * sizeof(int16_t));
   (compressed_data->ref_counts)[best_i]++;
 
-  //print_pixel(pixel, 224);
-
   result->main = best_i;
   result->additional = new_j;
   result->mse = -1;
@@ -52,7 +48,7 @@ void add_internal_standart(const int16_t* pixel,
 
 void check_pixel(const int16_t* pixel, compressed_image* compressed_data,
                  int bands, compression_settings* settings,
-                 match_result* result) {
+                 standart_data* result) {
   // Проверка по основным эталонам
   double min_mse = 1000000;
   int best_i = -1;

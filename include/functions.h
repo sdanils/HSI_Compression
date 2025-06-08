@@ -5,7 +5,7 @@
 #include "compressed_image.h"
 #include "compression_settings.h"
 #include "hsi_header.h"
-#include "match_resalt.h"
+#include "standart_data.h"
 
 /**
  * @brief Вычисляет среднеквадратичную ошибку (MSE) между двумя пикселями.
@@ -24,7 +24,7 @@ double calculate_mse(const int16_t* pixel1, const int16_t* pixel2, int bands);
  * @param result Указатель на структуру для хранения результата добавления.
  */
 void add_standart(const int16_t* pixel, compressed_image* compressed_data,
-                  int bands, match_result* result);
+                  int bands, standart_data* result);
 
 /**
  * @brief Добавляет внутренний стандарт (эталон) в сжатые данные.
@@ -36,7 +36,7 @@ void add_standart(const int16_t* pixel, compressed_image* compressed_data,
  */
 void add_internal_standart(const int16_t* pixel,
                            compressed_image* compressed_data, int bands,
-                           int best_i, match_result* result);
+                           int best_i, standart_data* result);
 
 /**
  * @brief Проверяет пиксель на соответствие стандартам и обновляет результат.
@@ -48,7 +48,7 @@ void add_internal_standart(const int16_t* pixel,
  */
 void check_pixel(const int16_t* pixel, compressed_image* compressed_data,
                  int bands, compression_settings* settings,
-                 match_result* result);
+                 standart_data* result);
 
 /**
  * @brief Добавляет результат сопоставления в структуру сжатого изображения.
@@ -61,7 +61,7 @@ void check_pixel(const int16_t* pixel, compressed_image* compressed_data,
  * памяти.
  */
 int add_match_result(compressed_image* compressed_data, int* capacity,
-                     match_result* new_elem);
+                     standart_data* new_elem);
 
 /**
  * @brief Выполняет сжатие изображения, анализируя каждый пиксель.
@@ -109,5 +109,6 @@ void save_standarts(const compressed_image* img, hsi_header* header,
 void save_compressed_image(const compressed_image* img,
                            const char* filename = "image.txt");
 
-void free_hsi_data(int16_t** data, int lines);
+void free_hsi_data(int16_t** data, hsi_header* header);
+void free_compressed_image(struct compressed_image* img);
 void print_pixel(const int16_t* pixel, int bands);
