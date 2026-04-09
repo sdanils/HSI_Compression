@@ -22,9 +22,8 @@ void add_standart(const int16_t* pixel, compressed_image* compressed_data,
       (int*)realloc(compressed_data->ref_counts,
                     (compressed_data->num_ref + 1) * sizeof(int));
   (compressed_data->ref_counts)[compressed_data->num_ref] = 1;
-  (compressed_data->num_ref)++;
-
   result->main = compressed_data->num_ref;
+  (compressed_data->num_ref)++;
   result->additional = 0;
   result->mse = -1;
 }

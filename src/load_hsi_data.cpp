@@ -1,4 +1,5 @@
 #include <cstdint>  // Для int16_t
+#include <cstdio>   // Для printf
 #include <cstdlib>  // Для exit, malloc, free
 #include <cstring>  // Для strtok, strcmp
 #include <fstream>
@@ -15,7 +16,7 @@ int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
   // Пропускаем смещение (если есть)
   fseek(dat_file, header->header_offset, SEEK_SET);
 
-  // Проверка типа данных (должен быть int16)
+  // // Проверка типа данных (должен быть int16)
   if (header->data_type != 2) {
     exit(1);
   }
@@ -28,13 +29,22 @@ int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
 
   // Чтение данных (BIP)
   for (int i = 0; i < total_pixels; i++) {
-    fread(pixel_matrix[i], sizeof(int16_t), header->bands, dat_file);
-    if (header->byte_order == 1) {
-      for (int b = 0; b < header->bands; b++) {
-        pixel_matrix[i][b] =
-            (pixel_matrix[i][b] >> 8) | (pixel_matrix[i][b] << 8);
+      fread(pixel_matrix[i], sizeof(int16_t), header->bands, dat_file);
+
+      if (header->byte_order == 1) {
+          for (int b = 0; b < header->bands; b++) {
+              uint16_t raw = (uint16_t)pixel_matrix[i][b];
+              pixel_matrix[i][b] = (int16_t)((raw >> 8) | (raw << 8));
+          }
       }
-    }
+
+      if (i % 200000 == 0) {
+          printf("pixel[%d]:", i);
+          for (int b = 0; b < header->bands; b++) {
+              printf(" band[%d]=%d", b, pixel_matrix[i][b]);
+          }
+          printf("\n");
+      }
   }
 
   fclose(dat_file);

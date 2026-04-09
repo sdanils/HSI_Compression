@@ -19,7 +19,7 @@ add_executable(hsi_compressor ${SOURCES} ${HEADERS})
 target_include_directories(hsi_compressor PRIVATE include)
 
 if(MSVC)
-    target_compile_options(hsi_compressor PRIVATE /W4 /WX)
+    target_compile_options(hsi_compressor PRIVATE /W4 /WX /D_CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(hsi_compressor PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()

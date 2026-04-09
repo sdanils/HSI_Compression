@@ -1,14 +1,12 @@
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <fstream>
+#include <stdexcept>
 
 #include "compressed_image.h"
 #include "hsi_header.h"
 #include "standart_data.h"
 
 void save_standarts(const compressed_image* img, hsi_header* header,
-                    const char* filename = "standarts.txt") {
+                    const char* filename) {
   std::ofstream fout(filename);
   fout << img->num_ref << ' ' << header->bands << '\n';
 
@@ -26,8 +24,7 @@ void save_standarts(const compressed_image* img, hsi_header* header,
   }
 }
 
-void save_compressed_image(const compressed_image* img,
-                           const char* filename = "image.txt") {
+void save_compressed_image(const compressed_image* img, const char* filename) {
   std::ofstream fout(filename);
   if (!fout.is_open()) {
     throw std::runtime_error("Cannot open file for writing");

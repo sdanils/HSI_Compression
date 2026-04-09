@@ -109,6 +109,17 @@ void save_standarts(const compressed_image* img, hsi_header* header,
 void save_compressed_image(const compressed_image* img,
                            const char* filename = "image.txt");
 
+/**
+ * @brief Сохраняет RGB-превью гиперспектрального изображения в PNG.
+ * Выбирает каналы, ближайшие к 660/550/470 нм (R/G/B), нормализует значения
+ * и записывает изображение через stb_image_write.
+ * @param pixel_matrix Матрица пикселей [lines*samples][bands].
+ * @param header Заголовок с размерами и (опционально) длинами волн.
+ * @param filename Имя выходного PNG-файла.
+ */
+void save_rgb_image(int16_t** pixel_matrix, const hsi_header* header,
+                    const char* filename = "rgb_preview.png");
+
 void free_hsi_data(int16_t** data, hsi_header* header);
 void free_compressed_image(struct compressed_image* img);
 void print_pixel(const int16_t* pixel, int bands);
