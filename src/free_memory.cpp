@@ -1,7 +1,7 @@
 #include <cstdint>  // Для int16_t
 #include <cstdlib>  // Для exit, malloc, free
 
-#include "functions.h"
+#include "memory.h"
 
 void free_hsi_data(int16_t** data, hsi_header* header) {
   int total_pixels = header->lines * header->samples;
@@ -26,9 +26,6 @@ void free_compressed_image(struct compressed_image* img) {
       }
     }
     free(img->hsi_standarts);
-  }
-
-  if (img->ref_counts != NULL) {
     free(img->ref_counts);
   }
 

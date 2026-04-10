@@ -3,8 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "functions.h"
-#include "hsi_header.h"
+#include "save.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"

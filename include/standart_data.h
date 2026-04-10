@@ -1,10 +1,11 @@
 #pragma once
 
+#include "kekm.h"
+
 /**
- * @brief Структура для хранения результата сжатия одного пикселя.
+ * @brief Результат сжатия одного пикселя.
  */
 struct standart_data {
-  int main;       /**< Индекс основного эталона */
-  int additional; /**< Индекс дополнительного эталона */
-  double mse;     /**< Минимальная среднеквадратичная ошибка (MSE) */
+  int ref_index;      /**< Индекс эталона */
+  kekm_result match;  /**< Результат сравнения: epsilon, delta_y, k_m */
 };

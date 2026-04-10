@@ -3,8 +3,7 @@
 #include <cstring>  // Для strtok, strcmp
 #include <fstream>
 
-#include "functions.h"
-#include "hsi_header.h"
+#include "io.h"
 
 // Функция для чтения заголовка .hdr
 void read_hdr_file(const char* hdr_path, hsi_header* header) {

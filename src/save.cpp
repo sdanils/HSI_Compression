@@ -1,39 +1,44 @@
 #include <fstream>
 #include <stdexcept>
 
-#include "compressed_image.h"
-#include "hsi_header.h"
+#include "save.h"
 #include "standart_data.h"
 
 void save_standarts(const compressed_image* img, hsi_header* header,
                     const char* filename) {
   std::ofstream fout(filename);
-  fout << img->num_ref << ' ' << header->bands << '\n';
 
-  for (int ref = 0; ref < img->num_ref; ++ref) {
-    int height = img->ref_counts[ref];
-    fout << height << '\n';
+  // Считаем общее число под-эталонов
+  int total = 0;
+  for (int i = 0; i < img->num_ref; i++) total += img->ref_counts[i];
 
-    for (int h = 0; h < height; ++h) {
-      for (int w = 0; w < header->bands; ++w) {
-        fout << img->hsi_standarts[ref][h][w] << ' ';
+  fout << total << ' ' << header->bands << '\n';
+
+  // Выводим все под-эталоны в порядке плоской нумерации
+  for (int i = 0; i < img->num_ref; i++) {
+    for (int j = 0; j < img->ref_counts[i]; j++) {
+      for (int w = 0; w < header->bands; w++) {
+        fout << img->hsi_standarts[i][j][w] << ' ';
       }
       fout << '\n';
     }
-    fout << ' ';
   }
 }
 
-void save_compressed_image(const compressed_image* img, const char* filename) {
+void save_compressed_image(const compressed_image* img, const hsi_header* header,
+                           const char* filename) {
   std::ofstream fout(filename);
   if (!fout.is_open()) {
     throw std::runtime_error("Cannot open file for writing");
   }
 
-  fout << img->size << '\n';
+  fout << header->samples << ' ' << header->lines << '\n';
 
   for (int idx = 0; idx < img->size; ++idx) {
-    const standart_data* mr = img->image[idx];
-    fout << mr->main << ' ' << mr->additional << ' ' << mr->mse << '\n';
+    const standart_data* sd = img->image[idx];
+    fout << sd->ref_index << ' '
+         << sd->match.epsilon << ' '
+         << sd->match.delta_y << ' '
+         << sd->match.k_m << '\n';
   }
 }

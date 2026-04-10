@@ -4,8 +4,8 @@
 #include <cstring>  // Для strtok, strcmp
 #include <fstream>
 
-#include "functions.h"
-#include "hsi_header.h"
+#include "io.h"
+#include "memory.h"
 
 int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
   FILE* dat_file = fopen(dat_path, "rb");
@@ -29,22 +29,16 @@ int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
 
   // Чтение данных (BIP)
   for (int i = 0; i < total_pixels; i++) {
-      fread(pixel_matrix[i], sizeof(int16_t), header->bands, dat_file);
+    fread(pixel_matrix[i], sizeof(int16_t), header->bands, dat_file);
 
-      if (header->byte_order == 1) {
-          for (int b = 0; b < header->bands; b++) {
-              uint16_t raw = (uint16_t)pixel_matrix[i][b];
-              pixel_matrix[i][b] = (int16_t)((raw >> 8) | (raw << 8));
-          }
+    if (header->byte_order == 1) {
+      for (int b = 0; b < header->bands; b++) {
+        uint16_t raw = (uint16_t)pixel_matrix[i][b];
+        pixel_matrix[i][b] = (int16_t)((raw >> 8) | (raw << 8));
       }
+    }
 
-      if (i % 200000 == 0) {
-          printf("pixel[%d]:", i);
-          for (int b = 0; b < header->bands; b++) {
-              printf(" band[%d]=%d", b, pixel_matrix[i][b]);
-          }
-          printf("\n");
-      }
+    if (i % 200000 == 0) print_pixel(pixel_matrix[i], header->bands);
   }
 
   fclose(dat_file);

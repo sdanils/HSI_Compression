@@ -2,87 +2,90 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "compression_settings.h"
-#include "functions.h"
-#include "standart_data.h"
+#include "check_pixel.h"
+#include "kekm.h"
 
-void add_standart(const int16_t* pixel, compressed_image* compressed_data,
-                  int bands, standart_data* result) {
-  (compressed_data->hsi_standarts) =
-      (int16_t***)realloc(compressed_data->hsi_standarts,
-                          (compressed_data->num_ref + 1) * sizeof(int16_t**));
-  (compressed_data->hsi_standarts)[compressed_data->num_ref] =
-      (int16_t**)malloc(sizeof(int16_t*));
-  (compressed_data->hsi_standarts)[compressed_data->num_ref][0] =
-      (int16_t*)malloc(bands * sizeof(int16_t));
-  memcpy((compressed_data->hsi_standarts)[compressed_data->num_ref][0], pixel,
-         bands * sizeof(int16_t));
-
-  (compressed_data->ref_counts) =
-      (int*)realloc(compressed_data->ref_counts,
-                    (compressed_data->num_ref + 1) * sizeof(int));
-  (compressed_data->ref_counts)[compressed_data->num_ref] = 1;
-  result->main = compressed_data->num_ref;
-  (compressed_data->num_ref)++;
-  result->additional = 0;
-  result->mse = -1;
+// Возвращает плоский глобальный индекс под-эталона best_i[sub_j].
+// ref_counts должны быть уже актуальны (до добавления нового элемента).
+static int flat_index(const compressed_image* cd, int main_i, int sub_j) {
+  int flat = 0;
+  for (int k = 0; k < main_i; k++) flat += cd->ref_counts[k];
+  return flat + sub_j;
 }
 
-void add_internal_standart(const int16_t* pixel,
-                           compressed_image* compressed_data, int bands,
-                           int best_i, standart_data* result) {
-  int new_j = (compressed_data->ref_counts)[best_i];
-  (compressed_data->hsi_standarts)[best_i] = (int16_t**)realloc(
-      (compressed_data->hsi_standarts)[best_i], (new_j + 1) * sizeof(int16_t*));
-  (compressed_data->hsi_standarts)[best_i][new_j] =
-      (int16_t*)malloc(bands * sizeof(int16_t));
-  memcpy((compressed_data->hsi_standarts)[best_i][new_j], pixel,
-         bands * sizeof(int16_t));
-  (compressed_data->ref_counts)[best_i]++;
+void add_standart(const int16_t* pixel, compressed_image* cd, int bands,
+                  standart_data* result) {
+  cd->hsi_standarts = (int16_t***)realloc(
+      cd->hsi_standarts, (cd->num_ref + 1) * sizeof(int16_t**));
+  cd->hsi_standarts[cd->num_ref] = (int16_t**)malloc(sizeof(int16_t*));
+  cd->hsi_standarts[cd->num_ref][0] = (int16_t*)malloc(bands * sizeof(int16_t));
+  memcpy(cd->hsi_standarts[cd->num_ref][0], pixel, bands * sizeof(int16_t));
 
-  result->main = best_i;
-  result->additional = new_j;
-  result->mse = -1;
+  cd->ref_counts = (int*)realloc(cd->ref_counts,
+                                 (cd->num_ref + 1) * sizeof(int));
+  cd->ref_counts[cd->num_ref] = 1;
+
+  // Плоский индекс нового эталона — сумма всех предыдущих под-эталонов
+  result->ref_index = flat_index(cd, cd->num_ref, 0);
+  kekm_result zero = {0.0, 0.0, 1.0};
+  result->match = zero;
+  cd->num_ref++;
 }
 
-void check_pixel(const int16_t* pixel, compressed_image* compressed_data,
-                 int bands, compression_settings* settings,
-                 standart_data* result) {
-  // Проверка по основным эталонам
-  double min_mse = 1000000;
+void add_internal_standart(const int16_t* pixel, compressed_image* cd,
+                           int bands, int best_i, standart_data* result) {
+  int new_j = cd->ref_counts[best_i];
+  cd->hsi_standarts[best_i] = (int16_t**)realloc(
+      cd->hsi_standarts[best_i], (new_j + 1) * sizeof(int16_t*));
+  cd->hsi_standarts[best_i][new_j] = (int16_t*)malloc(bands * sizeof(int16_t));
+  memcpy(cd->hsi_standarts[best_i][new_j], pixel, bands * sizeof(int16_t));
+
+  // Вычисляем плоский индекс до инкремента ref_counts
+  result->ref_index = flat_index(cd, best_i, new_j);
+  cd->ref_counts[best_i]++;
+  kekm_result zero = {0.0, 0.0, 1.0};
+  result->match = zero;
+}
+
+void check_pixel(const int16_t* pixel, compressed_image* cd, int bands,
+                 compression_settings* settings, standart_data* result) {
+  // Уровень 1: ищем ближайший основной эталон
+  double min_eps = 1e15;
   int best_i = -1;
 
-  for (int i = 0; i < compressed_data->num_ref; i++) {
-    double mse =
-        calculate_mse(pixel, (compressed_data->hsi_standarts)[i][0], bands);
-    if (mse < min_mse) {
-      min_mse = mse;
+  for (int i = 0; i < cd->num_ref; i++) {
+    kekm_result r =
+        pixel_distance(pixel, cd->hsi_standarts[i][0], bands, settings->method);
+    if (r.epsilon < min_eps) {
+      min_eps = r.epsilon;
       best_i = i;
     }
   }
 
-  if (min_mse > settings->main_error) {
-    add_standart(pixel, compressed_data, bands, result);
+  if (best_i == -1 || min_eps > settings->main_error) {
+    add_standart(pixel, cd, bands, result);
+    return;
+  }
+
+  // Уровень 2: ищем ближайший под-эталон внутри best_i
+  double min_sub = 1e15;
+  int best_j = -1;
+  kekm_result best_r = {0.0, 0.0, 1.0};
+
+  for (int j = 0; j < cd->ref_counts[best_i]; j++) {
+    kekm_result r = pixel_distance(pixel, cd->hsi_standarts[best_i][j], bands,
+                                   settings->method);
+    if (r.epsilon < min_sub) {
+      min_sub = r.epsilon;
+      best_j = j;
+      best_r = r;
+    }
+  }
+
+  if (min_sub > settings->additional_error) {
+    add_internal_standart(pixel, cd, bands, best_i, result);
   } else {
-    // Проверка по внутренним эталонам
-    double min_additional_mse = 1000000;
-    int best_j = -1;
-
-    for (int j = 0; j < (compressed_data->ref_counts)[best_i]; j++) {
-      double mse = calculate_mse(
-          pixel, (compressed_data->hsi_standarts)[best_i][j], bands);
-      if (mse < min_additional_mse) {
-        min_additional_mse = mse;
-        best_j = j;
-      }
-    }
-
-    if (min_additional_mse <= settings->additional_error) {
-      result->main = best_i;
-      result->additional = best_j;
-      result->mse = min_additional_mse;
-    } else {
-      add_internal_standart(pixel, compressed_data, bands, best_i, result);
-    }
+    result->ref_index = flat_index(cd, best_i, best_j);
+    result->match = best_r;
   }
 }

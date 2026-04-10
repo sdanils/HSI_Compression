@@ -2,11 +2,8 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "compressed_image.h"
-#include "compression_settings.h"
-#include "functions.h"
-#include "hsi_header.h"
-#include "standart_data.h"
+#include "check_pixel.h"
+#include "compression.h"
 
 int add_standart_data(compressed_image* compressed_data, int* capacity,
                       standart_data* new_elem) {
@@ -34,18 +31,25 @@ int compression(int16_t** pixel_matrix, hsi_header* header,
                 compressed_image* compressed_data,
                 compression_settings* settings) {
   int capacity = 0;
-  standart_data result = {-1, -1, 100000};
+  standart_data result = {-1, {0.0, 0.0, 1.0}};
+
+  int16_t* zero_pixel = (int16_t*)calloc(header->bands, sizeof(int16_t));
 
   int total_pixel = header->samples * header->lines;
   for (int i = 0; i < total_pixel; i++) {
     int16_t* current_pixel = pixel_matrix[i];
-    if (current_pixel[0] == -1 || current_pixel[0] == 0)
-      continue;  // Пропускаем пиксели заглушки
+    int neg_count = 0;
+    for (int b = 0; b < header->bands; b++)
+      if (current_pixel[b] < 0) neg_count++;
+    const int16_t* pixel_to_compress =
+        (neg_count > header->bands / 2) ? zero_pixel : current_pixel;
 
-    check_pixel(current_pixel, compressed_data, header->bands, settings,
+    check_pixel(pixel_to_compress, compressed_data, header->bands, settings,
                 &result);
     add_standart_data(compressed_data, &capacity, &result);
   }
+
+  free(zero_pixel);
   compressed_data->image = (standart_data**)realloc(
       compressed_data->image, compressed_data->size * sizeof(standart_data*));
 
