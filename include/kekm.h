@@ -30,3 +30,7 @@ kekm_result kekm_at(const int16_t* ref, const int16_t* pix, int bands);
 // Диспетчер: вызывает нужный метод по method
 kekm_result pixel_distance(const int16_t* ref, const int16_t* pix, int bands,
                            kekm_method method);
+
+// Нормировочная база для адаптивного порога (зависит от метода):
+//   NT/ST → M²(y)  (второй момент),  OT/AT → D(y)  (дисперсия)
+double pixel_norm(const int16_t* pix, int bands, kekm_method method);

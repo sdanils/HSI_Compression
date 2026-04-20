@@ -21,58 +21,69 @@ static int find_closest_band(const float* wavelengths, int bands, float target) 
   return best;
 }
 
-static int cmp16(const void* a, const void* b) {
-  return (int)(*(const int16_t*)a) - (int)(*(const int16_t*)b);
+// Строит LUT гистограммного выравнивания для одного канала.
+// Значение v ∈ [-32768, 32767] → out_lut[v + 32768] ∈ [0, 255].
+static void build_equalization_lut(const int16_t* values, int total,
+                                   uint8_t* out_lut) {
+  int* hist = (int*)calloc(65536, sizeof(int));
+  for (int i = 0; i < total; i++)
+    hist[(int)values[i] + 32768]++;
+
+  // CDF
+  long long cdf[65536];
+  cdf[0] = hist[0];
+  for (int i = 1; i < 65536; i++)
+    cdf[i] = cdf[i - 1] + hist[i];
+
+  // Минимальный ненулевой CDF (исключаем нули из нормировки)
+  long long cdf_min = 0;
+  for (int i = 0; i < 65536; i++) {
+    if (hist[i] > 0) { cdf_min = cdf[i]; break; }
+  }
+
+  long long denom = (long long)total - cdf_min;
+  for (int i = 0; i < 65536; i++) {
+    if (denom <= 0 || cdf[i] <= cdf_min) {
+      out_lut[i] = 0;
+    } else {
+      double v = (double)(cdf[i] - cdf_min) / (double)denom * 255.0;
+      out_lut[i] = (uint8_t)(v > 255.0 ? 255 : v);
+    }
+  }
+
+  free(hist);
 }
 
-static void compute_stretch(const int16_t* values, int count,
-                             double* out_min, double* out_max) {
-  int16_t* sorted = (int16_t*)malloc((size_t)count * sizeof(int16_t));
-  memcpy(sorted, values, (size_t)count * sizeof(int16_t));
-  qsort(sorted, (size_t)count, sizeof(int16_t), cmp16);
-  *out_min = sorted[(int)(count * 0.02)];
-  *out_max = sorted[(int)(count * 0.98)];
-  free(sorted);
-}
-
-// Возвращает плоский буфер uint8_t: 3 байта на пиксель (R, G, B)
 static uint8_t* hsi_to_rgb(int16_t** pixel_matrix, const hsi_header* header,
                             int r_band, int g_band, int b_band) {
   int total = header->lines * header->samples;
   int band_idx[3] = {r_band, g_band, b_band};
 
+  // Собираем значения каждого канала
   int16_t* channel_vals[3];
   for (int c = 0; c < 3; c++) {
     channel_vals[c] = (int16_t*)malloc((size_t)total * sizeof(int16_t));
-    for (int i = 0; i < total; i++) {
+    for (int i = 0; i < total; i++)
       channel_vals[c][i] = pixel_matrix[i][band_idx[c]];
-    }
   }
 
-  double mins[3], maxs[3];
+  // LUT гистограммного выравнивания для каждого канала
+  uint8_t* lut[3];
   for (int c = 0; c < 3; c++) {
-    compute_stretch(channel_vals[c], total, &mins[c], &maxs[c]);
-    if (maxs[c] <= mins[c]) maxs[c] = mins[c] + 1;
+    lut[c] = (uint8_t*)malloc(65536);
+    build_equalization_lut(channel_vals[c], total, lut[c]);
   }
 
   uint8_t* image = (uint8_t*)malloc((size_t)total * 3);
   for (int i = 0; i < total; i++) {
-    if (pixel_matrix[i][0] == -1 || pixel_matrix[i][0] == 0) {
-      image[i * 3 + 0] = 0;
-      image[i * 3 + 1] = 0;
-      image[i * 3 + 2] = 0;
-      continue;
-    }
-    for (int c = 0; c < 3; c++) {
-      double val = (channel_vals[c][i] - mins[c]) / (maxs[c] - mins[c]);
-      if (val < 0.0) val = 0.0;
-      if (val > 1.0) val = 1.0;
-      val = pow(val, 1.0 / 2.2);
-      image[i * 3 + c] = (uint8_t)(val * 255.0);
-    }
+    for (int c = 0; c < 3; c++)
+      image[i * 3 + c] = lut[c][(int)channel_vals[c][i] + 32768];
   }
 
-  for (int c = 0; c < 3; c++) free(channel_vals[c]);
+  for (int c = 0; c < 3; c++) {
+    free(channel_vals[c]);
+    free(lut[c]);
+  }
   return image;
 }
 

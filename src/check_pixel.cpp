@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 
 #include "check_pixel.h"
 #include "kekm.h"
@@ -47,42 +48,52 @@ void add_internal_standart(const int16_t* pixel, compressed_image* cd,
   result->match = zero;
 }
 
-void check_pixel(const int16_t* pixel, compressed_image* cd, int bands,
-                 compression_settings* settings, standart_data* result) {
-  // Уровень 1: ищем ближайший основной эталон
+// Ищет ближайший вектор среди refs[0..count-1].
+// Возвращает индекс найденного; best_r заполняется соответствующим результатом.
+static int find_nearest(const int16_t* pixel, int16_t** refs, int count,
+                        int bands, kekm_method method, kekm_result* best_r) {
   double min_eps = 1e15;
-  int best_i = -1;
-
-  for (int i = 0; i < cd->num_ref; i++) {
-    kekm_result r =
-        pixel_distance(pixel, cd->hsi_standarts[i][0], bands, settings->method);
+  int best = -1;
+  for (int i = 0; i < count; i++) {
+    kekm_result r = pixel_distance(pixel, refs[i], bands, method);
     if (r.epsilon < min_eps) {
       min_eps = r.epsilon;
-      best_i = i;
+      best = i;
+      *best_r = r;
     }
   }
 
-  if (best_i == -1 || min_eps > settings->main_error) {
+  return best;
+}
+
+void check_pixel(const int16_t* pixel, compressed_image* cd, int bands,
+                 compression_settings* settings, standart_data* result) {
+  // Адаптивные пороги: процент от нормировочной базы текущего пикселя
+  double norm = pixel_norm(pixel, bands, settings->method);
+  double main_threshold       = settings->main_error_pct       / 100.0 * norm;
+  double additional_threshold = settings->additional_error_pct / 100.0 * norm;
+
+  // Уровень 1: ищем ближайший основной эталон по первому под-эталону каждого
+  int16_t** main_refs = (int16_t**)malloc(cd->num_ref * sizeof(int16_t*));
+  for (int i = 0; i < cd->num_ref; i++)
+    main_refs[i] = cd->hsi_standarts[i][0];
+
+  kekm_result best_r = {0.0, 0.0, 1.0};
+  int best_i = find_nearest(pixel, main_refs, cd->num_ref, bands,
+                            settings->method, &best_r);
+  free(main_refs);
+
+  if (best_i == -1 || best_r.epsilon > main_threshold) {
     add_standart(pixel, cd, bands, result);
     return;
   }
 
   // Уровень 2: ищем ближайший под-эталон внутри best_i
-  double min_sub = 1e15;
-  int best_j = -1;
-  kekm_result best_r = {0.0, 0.0, 1.0};
+  int best_j = find_nearest(pixel, cd->hsi_standarts[best_i],
+                            cd->ref_counts[best_i], bands,
+                            settings->method, &best_r);
 
-  for (int j = 0; j < cd->ref_counts[best_i]; j++) {
-    kekm_result r = pixel_distance(pixel, cd->hsi_standarts[best_i][j], bands,
-                                   settings->method);
-    if (r.epsilon < min_sub) {
-      min_sub = r.epsilon;
-      best_j = j;
-      best_r = r;
-    }
-  }
-
-  if (min_sub > settings->additional_error) {
+  if (best_r.epsilon > additional_threshold) {
     add_internal_standart(pixel, cd, bands, best_i, result);
   } else {
     result->ref_index = flat_index(cd, best_i, best_j);

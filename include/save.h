@@ -26,6 +26,26 @@ void save_compressed_image(const compressed_image* img, const hsi_header* header
                            const char* filename = "image.txt");
 
 /**
+ * @brief Сохраняет все под-эталоны в бинарный GSD-файл.
+ * Формат: [int32 total][int32 bands][int16 × total × bands] — BIP.
+ * @param img      Сжатые данные с эталонами.
+ * @param header   Метаданные (используется bands).
+ * @param filename Имя выходного файла (по умолчанию "standarts.gsd").
+ */
+void save_standarts_gsd(const compressed_image* img, const hsi_header* header,
+                        const char* filename = "standarts.gsd");
+
+/**
+ * @brief Сохраняет сжатое изображение в бинарный GSD-файл.
+ * Формат: [int32 samples][int32 lines][per pixel: int32 ref_index, double epsilon, double delta_y, double k_m].
+ * @param img      Сжатые данные.
+ * @param header   Метаданные (используется samples, lines).
+ * @param filename Имя выходного файла (по умолчанию "image.gsd").
+ */
+void save_compressed_image_gsd(const compressed_image* img, const hsi_header* header,
+                               const char* filename = "image.gsd");
+
+/**
  * @brief Сохраняет RGB-превью в PNG.
  * Выбирает каналы, ближайшие к 660/550/470 нм, применяет растяжку 2–98% и гамма-коррекцию γ=2.2.
  * @param pixel_matrix Матрица пикселей [lines*samples][bands].

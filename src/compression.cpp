@@ -1,9 +1,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 
 #include "check_pixel.h"
 #include "compression.h"
+
+static const int16_t* select_pixel(const int16_t* pixel, const int16_t* zero_pixel,
+                                   int bands) {
+  int neg_count = 0;
+  for (int b = 0; b < bands; b++)
+    if (pixel[b] < 0) neg_count++;
+  return (neg_count > bands / 2) ? zero_pixel : pixel;
+}
 
 int add_standart_data(compressed_image* compressed_data, int* capacity,
                       standart_data* new_elem) {
@@ -37,15 +46,21 @@ int compression(int16_t** pixel_matrix, hsi_header* header,
 
   int total_pixel = header->samples * header->lines;
   for (int i = 0; i < total_pixel; i++) {
-    int16_t* current_pixel = pixel_matrix[i];
-    int neg_count = 0;
-    for (int b = 0; b < header->bands; b++)
-      if (current_pixel[b] < 0) neg_count++;
     const int16_t* pixel_to_compress =
-        (neg_count > header->bands / 2) ? zero_pixel : current_pixel;
+        select_pixel(pixel_matrix[i], zero_pixel, header->bands);
 
     check_pixel(pixel_to_compress, compressed_data, header->bands, settings,
                 &result);
+
+    if (i % 1000 == 0){
+      int total_standerts = 0;
+      for(int k = 0; k < compressed_data->num_ref; k++){
+        total_standerts += compressed_data->ref_counts[k];
+      }
+      std::cout << "pixel " << i << "/" << total_pixel
+                << "  epsilon=" << result.match.epsilon << " " << compressed_data->num_ref << " " << total_standerts << "\n";
+
+    }
     add_standart_data(compressed_data, &capacity, &result);
   }
 

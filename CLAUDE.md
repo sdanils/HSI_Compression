@@ -25,7 +25,7 @@ Input files:
 - `.hdr` — ENVI-format text header with image metadata
 - `.gsd` — binary pixel data (int16, BIP interleave)
 
-Outputs: `standarts.txt`, `image.txt`, `restored_preview.png`
+Outputs: `standarts.gsd`, `image.gsd`, `restored_preview.png`
 
 ## Architecture
 
@@ -46,8 +46,15 @@ free_*()                 → cleanup
 
 ### Two-criterion matching (`check_pixel.cpp`)
 
-1. **Level 1:** Compare pixel against base vector `hsi_standarts[i][0]` of each main standard using `pixel_distance()`. If best `epsilon > main_error` → `add_standart()`.
-2. **Level 2:** Within the best main standard, compare against all its sub-vectors. If best `epsilon > additional_error` → `add_internal_standart()`. Otherwise assign and store the `kekm_result`.
+Thresholds are **adaptive percentages**: before comparing, `check_pixel` computes
+`norm = pixel_norm(pixel, bands, method)` and scales each threshold:
+`threshold = (pct / 100.0) * norm`.
+
+`pixel_norm` returns `M²(y)` for NT/ST and `D(y)` for OT/AT — the same quantity
+that appears in the denominator of the normalised epsilon for each method.
+
+1. **Level 1:** Compare pixel against base vector `hsi_standarts[i][0]` of each main standard using `pixel_distance()`. If best `epsilon > main_error_pct/100 * norm` → `add_standart()`.
+2. **Level 2:** Within the best main standard, compare against all its sub-vectors. If best `epsilon > additional_error_pct/100 * norm` → `add_internal_standart()`. Otherwise assign and store the `kekm_result`.
 
 Pixels with more than half negative band values are replaced by a zero vector before compression (not skipped — every pixel produces an entry in `image[]`).
 
@@ -69,26 +76,34 @@ Four methods, selected via `compression_settings.method`:
 | Type | Fields |
 |------|--------|
 | `hsi_header` | `samples`, `lines`, `bands`, `byte_order`, `wavelengths[]` |
-| `compression_settings` | `main_error`, `additional_error`, `method` |
+| `compression_settings` | `main_error_pct` (%), `additional_error_pct` (%), `method` |
 | `compressed_image` | `hsi_standarts[main][sub][band]` (3D), `ref_counts[main]`, `image[]`, `size` |
 | `standart_data` | `ref_index` (flat), `match` (`kekm_result`) |
 
 Sub-standards are addressed by a **flat index**: `ref_index = Σ ref_counts[0..i-1] + j`. Both `standarts.txt` and `image.txt` use this flat numbering.
 
-### File formats
+### File formats (binary GSD)
 
-`standarts.txt`:
+`standarts.gsd`:
 ```
-<total_sub_standards> <bands>
-<b0> <b1> ... <bN>    ← flat index 0
-...
+[int32]  total_sub_standards
+[int32]  bands
+[int16 × total × bands]  — BIP, flat order (same layout as input .gsd)
 ```
 
-`image.txt`:
+`image.gsd`:
 ```
-<samples> <lines>
-<ref_index> <epsilon> <delta_y> <k_m>   ← one line per pixel, row-major order
+[int32]  samples
+[int32]  lines
+per pixel (row-major):
+  [int32]  ref_index
+  [double] epsilon
+  [double] delta_y
+  [double] k_m
 ```
+
+Legacy text variants (`standarts.txt`, `image.txt`) are still available via
+`save_standarts()` / `save_compressed_image()` and `decompress_from_files()`.
 
 ### Header organisation
 
@@ -105,11 +120,19 @@ Sub-standards are addressed by a **flat index**: `ref_index = Σ ref_counts[0..i
 
 ## Compression settings
 
+Thresholds are percentages of the pixel's own energy/variance (adaptive):
+
 ```cpp
-compression_settings settings = {5000, 2000, method};
-//                                ^     ^
-//                          main_error  additional_error
+compression_settings settings = {5.0, 2.0, method};
+//                                ^    ^
+//                    main_error_pct   additional_error_pct  (both in %)
 ```
 
-Higher thresholds → fewer standards → smaller output, lower quality.
-`main_error` controls how many distinct material classes are created; `additional_error` controls fine variation within each class.
+CLI: `--me 5.0 --ae 2.0`
+
+Higher % → fewer standards → smaller output, lower quality.
+`main_error_pct` controls how many distinct material classes are created;
+`additional_error_pct` controls fine variation within each class.
+
+Adaptive threshold per pixel: `threshold = (pct / 100.0) * pixel_norm(pixel, bands, method)`
+where `pixel_norm` = `M²(y)` for NT/ST, `D(y)` for OT/AT.

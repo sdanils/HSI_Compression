@@ -20,7 +20,7 @@ int16_t** decompress(const compressed_image* comp_data,
                      const hsi_header* header);
 
 /**
- * @brief Восстанавливает матрицу пикселей из двух файлов без данных в памяти.
+ * @brief Восстанавливает матрицу пикселей из двух текстовых файлов без данных в памяти.
  * Формат standarts_file: <total> <bands> / строка на каждый под-эталон.
  * Формат image_file: <samples> <lines> / <ref_index> <epsilon> <delta_y> <k_m>.
  * @param standarts_file Путь к файлу эталонов.
@@ -29,3 +29,14 @@ int16_t** decompress(const compressed_image* comp_data,
  */
 int16_t** decompress_from_files(const char* standarts_file,
                                 const char* image_file);
+
+/**
+ * @brief Восстанавливает матрицу пикселей из двух бинарных GSD-файлов.
+ * Формат standarts_gsd: [int32 total][int32 bands][int16 × total × bands].
+ * Формат image_gsd: [int32 samples][int32 lines][int32 ref + double×3 per pixel].
+ * @param standarts_gsd Путь к бинарному файлу эталонов.
+ * @param image_gsd     Путь к бинарному файлу сжатого изображения.
+ * @return Восстановленная матрица пикселей [lines*samples][bands].
+ */
+int16_t** decompress_from_gsd_files(const char* standarts_gsd,
+                                    const char* image_gsd);

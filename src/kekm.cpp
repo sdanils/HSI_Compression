@@ -70,6 +70,14 @@ kekm_result kekm_st(const int16_t* ref, const int16_t* pix, int bands) {
     return r;
 }
 
+double pixel_norm(const int16_t* pix, int bands, kekm_method method) {
+    switch (method) {
+        case KEKM_OT:
+        case KEKM_AT: return disp(pix, bands);
+        default:      return moment2(pix, bands);
+    }
+}
+
 kekm_result pixel_distance(const int16_t* ref, const int16_t* pix, int bands,
                            kekm_method method) {
   switch (method) {

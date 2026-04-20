@@ -7,6 +7,7 @@
 #include "io.h"
 #include "memory.h"
 
+
 int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
   FILE* dat_file = fopen(dat_path, "rb");
   if (!dat_file) {
@@ -36,9 +37,7 @@ int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
         uint16_t raw = (uint16_t)pixel_matrix[i][b];
         pixel_matrix[i][b] = (int16_t)((raw >> 8) | (raw << 8));
       }
-    }
-
-    if (i % 200000 == 0) print_pixel(pixel_matrix[i], header->bands);
+    } 
   }
 
   fclose(dat_file);
