@@ -5,8 +5,11 @@
 
 #include "save.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#pragma GCC diagnostic pop
 
 static int find_closest_band(const float* wavelengths, int bands, float target) {
   int best = 0;
