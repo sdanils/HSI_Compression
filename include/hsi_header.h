@@ -12,4 +12,5 @@ struct hsi_header {
   char interleave[4]; /**< Порядок хранения данных ("bip", "bil", "bsq") */
   int byte_order;     /**< Порядок байтов (0 = little-endian, 1 = big-endian) */
   int header_offset;  /**< Смещение данных в файле (в байтах) */
+  float* wavelengths; /**< Длины волн для каждого канала (нм), nullptr если не задано */
 };

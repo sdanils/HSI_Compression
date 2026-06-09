@@ -1,42 +1,91 @@
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <fstream>
+#include <stdexcept>
 
-#include "compressed_image.h"
-#include "hsi_header.h"
+#include "save.h"
 #include "standart_data.h"
 
+// ---------- GSD binary ----------
+
+void save_standarts_gsd(const compressed_image* img, const hsi_header* header,
+                        const char* filename) {
+  FILE* f = fopen(filename, "wb");
+  if (!f) throw std::runtime_error("Cannot open standarts GSD for writing");
+
+  int32_t total = 0;
+  for (int i = 0; i < img->num_ref; i++) total += img->ref_counts[i];
+  int32_t bands = header->bands;
+
+  fwrite(&total, sizeof(int32_t), 1, f);
+  fwrite(&bands, sizeof(int32_t), 1, f);
+
+  for (int i = 0; i < img->num_ref; i++)
+    for (int j = 0; j < img->ref_counts[i]; j++)
+      fwrite(img->hsi_standarts[i][j], sizeof(int16_t), bands, f);
+
+  fclose(f);
+}
+
+void save_compressed_image_gsd(const compressed_image* img,
+                               const hsi_header* header,
+                               const char* filename) {
+  FILE* f = fopen(filename, "wb");
+  if (!f) throw std::runtime_error("Cannot open image GSD for writing");
+
+  int32_t samples = header->samples;
+  int32_t lines   = header->lines;
+  fwrite(&samples, sizeof(int32_t), 1, f);
+  fwrite(&lines,   sizeof(int32_t), 1, f);
+
+  for (int idx = 0; idx < img->size; ++idx) {
+    const standart_data* sd = img->image[idx];
+    int32_t ref = sd->ref_index;
+    fwrite(&ref,             sizeof(int32_t), 1, f);
+    fwrite(&sd->match.epsilon, sizeof(double),  1, f);
+    fwrite(&sd->match.delta_y, sizeof(double),  1, f);
+    fwrite(&sd->match.k_m,     sizeof(double),  1, f);
+  }
+
+  fclose(f);
+}
+
+// ---------- text (legacy) ----------
+
 void save_standarts(const compressed_image* img, hsi_header* header,
-                    const char* filename = "standarts.txt") {
+                    const char* filename) {
   std::ofstream fout(filename);
-  fout << img->num_ref << ' ' << header->bands << '\n';
 
-  for (int ref = 0; ref < img->num_ref; ++ref) {
-    int height = img->ref_counts[ref];
-    fout << height << '\n';
+  // Считаем общее число под-эталонов
+  int total = 0;
+  for (int i = 0; i < img->num_ref; i++) total += img->ref_counts[i];
 
-    for (int h = 0; h < height; ++h) {
-      for (int w = 0; w < header->bands; ++w) {
-        fout << img->hsi_standarts[ref][h][w] << ' ';
+  fout << total << ' ' << header->bands << '\n';
+
+  // Выводим все под-эталоны в порядке плоской нумерации
+  for (int i = 0; i < img->num_ref; i++) {
+    for (int j = 0; j < img->ref_counts[i]; j++) {
+      for (int w = 0; w < header->bands; w++) {
+        fout << img->hsi_standarts[i][j][w] << ' ';
       }
       fout << '\n';
     }
-    fout << ' ';
   }
 }
 
-void save_compressed_image(const compressed_image* img,
-                           const char* filename = "image.txt") {
+void save_compressed_image(const compressed_image* img, const hsi_header* header,
+                           const char* filename) {
   std::ofstream fout(filename);
   if (!fout.is_open()) {
     throw std::runtime_error("Cannot open file for writing");
   }
 
-  fout << img->size << '\n';
+  fout << header->samples << ' ' << header->lines << '\n';
 
   for (int idx = 0; idx < img->size; ++idx) {
-    const standart_data* mr = img->image[idx];
-    fout << mr->main << ' ' << mr->additional << ' ' << mr->mse << '\n';
+    const standart_data* sd = img->image[idx];
+    fout << sd->ref_index << ' '
+         << sd->match.epsilon << ' '
+         << sd->match.delta_y << ' '
+         << sd->match.k_m << '\n';
   }
 }
