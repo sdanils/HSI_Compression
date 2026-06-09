@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
 
   int16_t** hsi_data = load_hsi_data(dat_path, &header);
   save_rgb_image(hsi_data, &header, "preview.png");
-
+  
   compressed_image comp_data = {NULL, 0, NULL, NULL, 0};
   compression_settings settings = {main_error, additional_error, method};
   // main_error / additional_error — проценты; адаптация к конкретному пикселю
