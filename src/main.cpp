@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
 
   // Восстановление из памяти
   int16_t** restored = decompress(&comp_data, &header);
-  save_rgb_image(restored, &header, "restored_preview.png");
+  save_rgb_image(restored, &header, "restored_preview.png", hsi_data);
   free_hsi_data(restored, &header);
 
   // Восстановление из GSD-файлов (раскомментировать для автономного использования)

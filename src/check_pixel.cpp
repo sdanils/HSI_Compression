@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -41,8 +42,16 @@ void add_internal_standart(const int16_t* pixel, compressed_image* cd,
   cd->hsi_standarts[best_i][new_j] = (int16_t*)malloc(bands * sizeof(int16_t));
   memcpy(cd->hsi_standarts[best_i][new_j], pixel, bands * sizeof(int16_t));
 
-  // Вычисляем плоский индекс до инкремента ref_counts
-  result->ref_index = flat_index(cd, best_i, new_j);
+  // Плоский индекс нового под-эталона = начало стандартов после best_i.
+  // Все уже сохранённые пиксели с ref_index >= этого порога указывают
+  // на стандарты best_i+1 и далее — они сдвигаются на 1.
+  int new_flat = flat_index(cd, best_i, new_j);
+  for (int i = 0; i < cd->size; i++) {
+    if (cd->image[i]->ref_index >= new_flat)
+      cd->image[i]->ref_index++;
+  }
+
+  result->ref_index = new_flat;
   cd->ref_counts[best_i]++;
   kekm_result zero = {0.0, 0.0, 1.0};
   result->match = zero;
@@ -55,7 +64,7 @@ static int find_nearest(const int16_t* pixel, int16_t** refs, int count,
   double min_eps = 1e15;
   int best = -1;
   for (int i = 0; i < count; i++) {
-    kekm_result r = pixel_distance(pixel, refs[i], bands, method);
+    kekm_result r = pixel_distance(refs[i], pixel, bands, method);
     if (r.epsilon < min_eps) {
       min_eps = r.epsilon;
       best = i;

@@ -53,4 +53,5 @@ void save_compressed_image_gsd(const compressed_image* img, const hsi_header* he
  * @param filename     Имя выходного PNG-файла (по умолчанию "rgb_preview.png").
  */
 void save_rgb_image(int16_t** pixel_matrix, const hsi_header* header,
-                    const char* filename = "rgb_preview.png");
+                    const char* filename = "rgb_preview.png",
+                    int16_t** ref_matrix = nullptr);
