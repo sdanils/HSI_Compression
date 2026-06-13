@@ -64,9 +64,37 @@ kekm_result kekm_st(const int16_t* ref, const int16_t* pix, int bands) {
     double m2e = moment2(ref, bands);
     double myy = moment2(pix, bands);
     kekm_result r;
+    if (m2e <= 0.0) {
+        // Вырожденный (нулевой) эталон: масштабирование не определено.
+        // Откатываемся на НП — k_m = 1, epsilon = M²(y) (= формула НП при e ≡ 0).
+        r.k_m = 1.0;
+        r.delta_y = 0.0;
+        r.epsilon = myy;
+        return r;
+    }
     r.k_m = mey / m2e;
     r.epsilon = myy - mey * mey / m2e;
     r.delta_y = 0.0;
+    return r;
+}
+
+// (4) Инвариантная к аффинным преобразованиям (АП)
+kekm_result kekm_at(const int16_t* ref, const int16_t* pix, int bands) {
+    double de = disp(ref, bands);
+    double dp = disp(pix, bands);
+    double c  = cov(ref, pix, bands);
+    kekm_result r;
+    if (de <= 0.0) {
+        // Константный эталон: аффинный масштаб не определён (cov тоже = 0).
+        // Откатываемся на ОП — k_m = 1, epsilon = D(y).
+        r.k_m = 1.0;
+        r.delta_y = mean(pix, bands) - mean(ref, bands);
+        r.epsilon = dp;
+        return r;
+    }
+    r.epsilon = dp - c * c / de;
+    r.k_m = c / de;
+    r.delta_y = mean(pix, bands) - r.k_m * mean(ref, bands);
     return r;
 }
 
@@ -84,16 +112,4 @@ kekm_result pixel_distance(const int16_t* ref, const int16_t* pix, int bands,
     case KEKM_AT: return kekm_at(ref, pix, bands);
     default:      return kekm_nt(ref, pix, bands);
   }
-}
-
-// (4) Инвариантная к аффинным преобразованиям (АП)
-kekm_result kekm_at(const int16_t* ref, const int16_t* pix, int bands) {
-    double de = disp(ref, bands);
-    double dp = disp(pix, bands);
-    double c  = cov(ref, pix, bands);
-    kekm_result r;
-    r.epsilon = dp - c * c / de;
-    r.k_m = c / de;
-    r.delta_y = mean(pix, bands) - r.k_m * mean(ref, bands);
-    return r;
 }

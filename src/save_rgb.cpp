@@ -36,49 +36,52 @@ static void compute_channel(int16_t** pixel_matrix, int total, int bands,
   }
 }
 
-// Histogram-equalisation LUT for float values quantised into 65536 bins.
-// out_lut[bin] → uint8, bin = round((val - vmin) / (vmax - vmin) * 65535).
-static void build_equalization_lut_float(const float* values, int total,
-                                         float vmin, float vmax,
-                                         uint8_t* out_lut) {
-  int* hist = (int*)calloc(65536, sizeof(int));
-  float inv_range = (vmax > vmin + 1e-6f) ? 65535.0f / (vmax - vmin) : 1.0f;
+// Find lo/hi percentile values via histogram (65536 bins over [vmin, vmax]).
+static void percentile_range(const float* values, int total,
+                              float vmin, float vmax,
+                              float lo_pct, float hi_pct,
+                              float* lo_val, float* hi_val) {
+  const int BINS = 65536;
+  int* hist = (int*)calloc(BINS, sizeof(int));
+  float inv = (vmax > vmin + 1e-6f) ? (float)(BINS - 1) / (vmax - vmin) : 1.0f;
 
   for (int i = 0; i < total; i++) {
-    int bin = (int)((values[i] - vmin) * inv_range + 0.5f);
-    if (bin < 0) bin = 0;
-    if (bin > 65535) bin = 65535;
-    hist[bin]++;
+    int b = (int)((values[i] - vmin) * inv + 0.5f);
+    if (b < 0) b = 0;
+    if (b >= BINS) b = BINS - 1;
+    hist[b]++;
   }
 
-  long long* cdf = (long long*)malloc(65536 * sizeof(long long));
-  cdf[0] = hist[0];
-  for (int i = 1; i < 65536; i++)
-    cdf[i] = cdf[i - 1] + hist[i];
-
-  long long cdf_min = 0;
-  for (int i = 0; i < 65536; i++) {
-    if (hist[i] > 0) { cdf_min = cdf[i]; break; }
-  }
-
-  long long denom = (long long)total - cdf_min;
-  for (int i = 0; i < 65536; i++) {
-    if (denom <= 0 || cdf[i] <= cdf_min)
-      out_lut[i] = 0;
-    else {
-      double v = (double)(cdf[i] - cdf_min) / (double)denom * 255.0;
-      out_lut[i] = (uint8_t)(v > 255.0 ? 255 : v);
+  long long lo_count = (long long)(lo_pct / 100.0f * total + 0.5f);
+  long long hi_count = (long long)(hi_pct / 100.0f * total + 0.5f);
+  long long acc = 0;
+  *lo_val = vmin;
+  *hi_val = vmax;
+  for (int i = 0; i < BINS; i++) {
+    acc += hist[i];
+    if (acc >= lo_count && *lo_val == vmin)
+      *lo_val = vmin + (float)i / (float)(BINS - 1) * (vmax - vmin);
+    if (acc >= hi_count) {
+      *hi_val = vmin + (float)i / (float)(BINS - 1) * (vmax - vmin);
+      break;
     }
   }
 
   free(hist);
-  free(cdf);
 }
 
 // Gaussian sigma in nm — controls how many neighbouring bands blend into each channel.
 // Larger sigma → smoother, more bands contribute; smaller → closer to single-band.
 static const float RGB_SIGMA = 30.0f;
 static const float RGB_TARGETS[3] = {660.0f, 550.0f, 470.0f};
+// Saturation multiplier: 1.0 = no change, >1 boosts colour distance from luminance.
+static const float RGB_SAT_FACTOR = 1.8f;
+
+static uint8_t clamp_u8(float v) {
+  if (v < 0.0f)   return 0;
+  if (v > 255.0f) return 255;
+  return (uint8_t)(v + 0.5f);
+}
 
 static uint8_t* hsi_to_rgb(int16_t** pixel_matrix, const hsi_header* header,
                             int16_t** ref_matrix) {
@@ -114,24 +117,33 @@ static uint8_t* hsi_to_rgb(int16_t** pixel_matrix, const hsi_header* header,
       if (ref_ch[c][i] > vmax) vmax = ref_ch[c][i];
     }
 
-    uint8_t* lut = (uint8_t*)malloc(65536);
-    build_equalization_lut_float(ref_ch[c], total, vmin, vmax, lut);
+    float lo, hi;
+    percentile_range(ref_ch[c], total, vmin, vmax, 2.0f, 98.0f, &lo, &hi);
 
-    float inv_range = (vmax > vmin + 1e-6f) ? 65535.0f / (vmax - vmin) : 1.0f;
+    float inv_range = (hi > lo + 1e-6f) ? 255.0f / (hi - lo) : 1.0f;
     for (int i = 0; i < total; i++) {
-      int bin = (int)((ch[c][i] - vmin) * inv_range + 0.5f);
-      if (bin < 0) bin = 0;
-      if (bin > 65535) bin = 65535;
-      image[i * 3 + c] = lut[bin];
+      float v = (ch[c][i] - lo) * inv_range;
+      if (v < 0.0f) v = 0.0f;
+      if (v > 255.0f) v = 255.0f;
+      image[i * 3 + c] = (uint8_t)(v + 0.5f);
     }
-
-    free(lut);
   }
 
   for (int c = 0; c < 3; c++) {
     free(weights[c]);
     free(ch[c]);
     if (ref_matrix) free(ref_ch[c]);
+  }
+
+  // Saturation boost: scale each channel away from luminance (Rec.601 weights).
+  for (int i = 0; i < total; i++) {
+    float r = image[i * 3 + 0];
+    float g = image[i * 3 + 1];
+    float b = image[i * 3 + 2];
+    float lum = 0.299f * r + 0.587f * g + 0.114f * b;
+    image[i * 3 + 0] = clamp_u8(lum + RGB_SAT_FACTOR * (r - lum));
+    image[i * 3 + 1] = clamp_u8(lum + RGB_SAT_FACTOR * (g - lum));
+    image[i * 3 + 2] = clamp_u8(lum + RGB_SAT_FACTOR * (b - lum));
   }
 
   return image;

@@ -38,5 +38,5 @@ void add_internal_standart(const int16_t* pixel, compressed_image* cd,
  * @param result          Результат сопоставления.
  */
 void check_pixel(const int16_t* pixel, compressed_image* compressed_data,
-                 int bands, compression_settings* settings,
+                 int bands, const compression_settings* settings,
                  standart_data* result);
