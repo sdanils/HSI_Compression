@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
+#include <stdexcept>
 
 #include "check_pixel.h"
 #include "compression.h"
@@ -19,8 +19,10 @@ int add_standart_data(compressed_image* compressed_data, int* capacity,
   if (compressed_data->size >= *capacity) {
     int new_capacity = (*capacity == 0) ? 4 : (*capacity * 2);
 
-    compressed_data->image = (standart_data**)realloc(
+    standart_data** tmp = (standart_data**)realloc(
         compressed_data->image, new_capacity * sizeof(standart_data*));
+    if (!tmp) { fprintf(stderr, "realloc failed in add_standart_data\n"); return -1; }
+    compressed_data->image = tmp;
     *capacity = new_capacity;
   }
 
@@ -52,21 +54,18 @@ int compression(int16_t** pixel_matrix, hsi_header* header,
     check_pixel(pixel_to_compress, compressed_data, header->bands, settings,
                 &result);
 
-    if (i % 1000 == 0){
-      int total_standerts = 0;
-      for(int k = 0; k < compressed_data->num_ref; k++){
-        total_standerts += compressed_data->ref_counts[k];
-      }
-      std::cout << "pixel " << i << "/" << total_pixel
-                << "  epsilon=" << result.match.epsilon << " " << compressed_data->num_ref << " " << total_standerts << "\n";
-
+    if (add_standart_data(compressed_data, &capacity, &result) != 0) {
+      free(zero_pixel);
+      throw std::runtime_error("add_standart_data: нехватка памяти");
     }
-    add_standart_data(compressed_data, &capacity, &result);
   }
 
   free(zero_pixel);
-  compressed_data->image = (standart_data**)realloc(
-      compressed_data->image, compressed_data->size * sizeof(standart_data*));
+  if (compressed_data->size > 0) {
+    standart_data** tmp = (standart_data**)realloc(
+        compressed_data->image, compressed_data->size * sizeof(standart_data*));
+    if (tmp) compressed_data->image = tmp;
+  }
 
   return 0;
 }

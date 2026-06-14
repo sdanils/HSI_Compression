@@ -14,4 +14,7 @@ struct compression_settings {
   double main_error_pct;       /**< Порог 1-го уровня, % */
   double additional_error_pct; /**< Порог 2-го уровня, % */
   kekm_method method;          /**< Метод сравнения пикселей (KEKM_NT/OT/ST/AT) */
+  int shift_enabled;           /**< 1 — смещённое размещение нового эталона */
+  double step_coef;            /**< Коэффициент шага решётки sc: d = sc·δ,
+                                    1 ≤ sc ≤ 2 (задаётся через --sc) */
 };

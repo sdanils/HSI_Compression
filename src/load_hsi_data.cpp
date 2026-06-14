@@ -17,8 +17,8 @@ int16_t** load_hsi_data(const char* dat_path, const hsi_header* header) {
   // Пропускаем смещение (если есть)
   fseek(dat_file, header->header_offset, SEEK_SET);
 
-  // // Проверка типа данных (должен быть int16)
   if (header->data_type != 2) {
+    fclose(dat_file);
     exit(1);
   }
 

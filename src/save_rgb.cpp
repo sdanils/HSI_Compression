@@ -5,96 +5,153 @@
 
 #include "save.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#pragma GCC diagnostic pop
 
-static int find_closest_band(const float* wavelengths, int bands, float target) {
-  int best = 0;
-  float best_diff = fabsf(wavelengths[0] - target);
-  for (int i = 1; i < bands; i++) {
-    float diff = fabsf(wavelengths[i] - target);
-    if (diff < best_diff) {
-      best_diff = diff;
-      best = i;
-    }
+// Gaussian weights centered at target wavelength; normalised to sum = 1.
+static void compute_gaussian_weights(const float* wavelengths, int bands,
+                                     float target, float sigma, float* weights) {
+  float sum = 0.0f;
+  for (int i = 0; i < bands; i++) {
+    float d = (wavelengths[i] - target) / sigma;
+    weights[i] = expf(-0.5f * d * d);
+    sum += weights[i];
   }
-  return best;
+  if (sum > 0.0f)
+    for (int i = 0; i < bands; i++)
+      weights[i] /= sum;
 }
 
-// Строит LUT гистограммного выравнивания для одного канала.
-// Значение v ∈ [-32768, 32767] → out_lut[v + 32768] ∈ [0, 255].
-static void build_equalization_lut(const int16_t* values, int total,
-                                   uint8_t* out_lut) {
-  int* hist = (int*)calloc(65536, sizeof(int));
-  for (int i = 0; i < total; i++)
-    hist[(int)values[i] + 32768]++;
+// Weighted-average spectral value for every pixel in pixel_matrix.
+static void compute_channel(int16_t** pixel_matrix, int total, int bands,
+                             const float* weights, float* out) {
+  for (int i = 0; i < total; i++) {
+    float acc = 0.0f;
+    for (int b = 0; b < bands; b++)
+      acc += weights[b] * (float)pixel_matrix[i][b];
+    out[i] = acc;
+  }
+}
 
-  // CDF
-  long long cdf[65536];
-  cdf[0] = hist[0];
-  for (int i = 1; i < 65536; i++)
-    cdf[i] = cdf[i - 1] + hist[i];
+// Find lo/hi percentile values via histogram (65536 bins over [vmin, vmax]).
+static void percentile_range(const float* values, int total,
+                              float vmin, float vmax,
+                              float lo_pct, float hi_pct,
+                              float* lo_val, float* hi_val) {
+  const int BINS = 65536;
+  int* hist = (int*)calloc(BINS, sizeof(int));
+  float inv = (vmax > vmin + 1e-6f) ? (float)(BINS - 1) / (vmax - vmin) : 1.0f;
 
-  // Минимальный ненулевой CDF (исключаем нули из нормировки)
-  long long cdf_min = 0;
-  for (int i = 0; i < 65536; i++) {
-    if (hist[i] > 0) { cdf_min = cdf[i]; break; }
+  for (int i = 0; i < total; i++) {
+    int b = (int)((values[i] - vmin) * inv + 0.5f);
+    if (b < 0) b = 0;
+    if (b >= BINS) b = BINS - 1;
+    hist[b]++;
   }
 
-  long long denom = (long long)total - cdf_min;
-  for (int i = 0; i < 65536; i++) {
-    if (denom <= 0 || cdf[i] <= cdf_min) {
-      out_lut[i] = 0;
-    } else {
-      double v = (double)(cdf[i] - cdf_min) / (double)denom * 255.0;
-      out_lut[i] = (uint8_t)(v > 255.0 ? 255 : v);
+  long long lo_count = (long long)(lo_pct / 100.0f * total + 0.5f);
+  long long hi_count = (long long)(hi_pct / 100.0f * total + 0.5f);
+  long long acc = 0;
+  *lo_val = vmin;
+  *hi_val = vmax;
+  for (int i = 0; i < BINS; i++) {
+    acc += hist[i];
+    if (acc >= lo_count && *lo_val == vmin)
+      *lo_val = vmin + (float)i / (float)(BINS - 1) * (vmax - vmin);
+    if (acc >= hi_count) {
+      *hi_val = vmin + (float)i / (float)(BINS - 1) * (vmax - vmin);
+      break;
     }
   }
 
   free(hist);
 }
 
-static uint8_t* hsi_to_rgb(int16_t** pixel_matrix, const hsi_header* header,
-                            int r_band, int g_band, int b_band) {
-  int total = header->lines * header->samples;
-  int band_idx[3] = {r_band, g_band, b_band};
+// Gaussian sigma in nm — controls how many neighbouring bands blend into each channel.
+// Larger sigma → smoother, more bands contribute; smaller → closer to single-band.
+static const float RGB_SIGMA = 30.0f;
+static const float RGB_TARGETS[3] = {660.0f, 550.0f, 470.0f};
+// Saturation multiplier: 1.0 = no change, >1 boosts colour distance from luminance.
+static const float RGB_SAT_FACTOR = 1.8f;
 
-  // Собираем значения каждого канала
-  int16_t* channel_vals[3];
+static uint8_t clamp_u8(float v) {
+  if (v < 0.0f)   return 0;
+  if (v > 255.0f) return 255;
+  return (uint8_t)(v + 0.5f);
+}
+
+static uint8_t* hsi_to_rgb(int16_t** pixel_matrix, const hsi_header* header,
+                            int16_t** ref_matrix) {
+  int total = header->lines * header->samples;
+
+  float* weights[3];
   for (int c = 0; c < 3; c++) {
-    channel_vals[c] = (int16_t*)malloc((size_t)total * sizeof(int16_t));
-    for (int i = 0; i < total; i++)
-      channel_vals[c][i] = pixel_matrix[i][band_idx[c]];
+    weights[c] = (float*)malloc((size_t)header->bands * sizeof(float));
+    compute_gaussian_weights(header->wavelengths, header->bands,
+                             RGB_TARGETS[c], RGB_SIGMA, weights[c]);
   }
 
-  // LUT гистограммного выравнивания для каждого канала
-  uint8_t* lut[3];
+  float* ch[3];
+  float* ref_ch[3];
   for (int c = 0; c < 3; c++) {
-    lut[c] = (uint8_t*)malloc(65536);
-    build_equalization_lut(channel_vals[c], total, lut[c]);
+    ch[c] = (float*)malloc((size_t)total * sizeof(float));
+    compute_channel(pixel_matrix, total, header->bands, weights[c], ch[c]);
+
+    if (ref_matrix) {
+      ref_ch[c] = (float*)malloc((size_t)total * sizeof(float));
+      compute_channel(ref_matrix, total, header->bands, weights[c], ref_ch[c]);
+    } else {
+      ref_ch[c] = ch[c];
+    }
   }
 
   uint8_t* image = (uint8_t*)malloc((size_t)total * 3);
-  for (int i = 0; i < total; i++) {
-    for (int c = 0; c < 3; c++)
-      image[i * 3 + c] = lut[c][(int)channel_vals[c][i] + 32768];
+
+  for (int c = 0; c < 3; c++) {
+    float vmin = ref_ch[c][0], vmax = ref_ch[c][0];
+    for (int i = 1; i < total; i++) {
+      if (ref_ch[c][i] < vmin) vmin = ref_ch[c][i];
+      if (ref_ch[c][i] > vmax) vmax = ref_ch[c][i];
+    }
+
+    float lo, hi;
+    percentile_range(ref_ch[c], total, vmin, vmax, 2.0f, 98.0f, &lo, &hi);
+
+    float inv_range = (hi > lo + 1e-6f) ? 255.0f / (hi - lo) : 1.0f;
+    for (int i = 0; i < total; i++) {
+      float v = (ch[c][i] - lo) * inv_range;
+      if (v < 0.0f) v = 0.0f;
+      if (v > 255.0f) v = 255.0f;
+      image[i * 3 + c] = (uint8_t)(v + 0.5f);
+    }
   }
 
   for (int c = 0; c < 3; c++) {
-    free(channel_vals[c]);
-    free(lut[c]);
+    free(weights[c]);
+    free(ch[c]);
+    if (ref_matrix) free(ref_ch[c]);
   }
+
+  // Saturation boost: scale each channel away from luminance (Rec.601 weights).
+  for (int i = 0; i < total; i++) {
+    float r = image[i * 3 + 0];
+    float g = image[i * 3 + 1];
+    float b = image[i * 3 + 2];
+    float lum = 0.299f * r + 0.587f * g + 0.114f * b;
+    image[i * 3 + 0] = clamp_u8(lum + RGB_SAT_FACTOR * (r - lum));
+    image[i * 3 + 1] = clamp_u8(lum + RGB_SAT_FACTOR * (g - lum));
+    image[i * 3 + 2] = clamp_u8(lum + RGB_SAT_FACTOR * (b - lum));
+  }
+
   return image;
 }
 
 void save_rgb_image(int16_t** pixel_matrix, const hsi_header* header,
-                    const char* filename) {
-  int r_band = find_closest_band(header->wavelengths, header->bands, 660.0f);
-  int g_band = find_closest_band(header->wavelengths, header->bands, 550.0f);
-  int b_band = find_closest_band(header->wavelengths, header->bands, 470.0f);
-
-  uint8_t* image = hsi_to_rgb(pixel_matrix, header, r_band, g_band, b_band);
-
+                    const char* filename, int16_t** ref_matrix) {
+  uint8_t* image = hsi_to_rgb(pixel_matrix, header, ref_matrix);
   stbi_write_png(filename, header->samples, header->lines, 3, image,
                  header->samples * 3);
   free(image);
