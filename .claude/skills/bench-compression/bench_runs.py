@@ -30,7 +30,8 @@ METHODS = {
 }
 
 INTERNAL_RE = re.compile(r"Внутренних эталонов:\s*(\d+)")
-ELAPSED_RE = re.compile(r"Elapsed \(wall clock\) time[^:]*:\s*([0-9:.]+)")
+ELAPSED_RE = re.compile(
+    r"Elapsed \(wall clock\) time \(h:mm:ss or m:ss\):\s*([0-9:.]+)")
 MAXRSS_RE = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
 
 
@@ -52,9 +53,34 @@ def elapsed_to_sec(s):
     return sec
 
 
-def run_one(method, shift, sc):
-    """Один прогон компрессора. Возвращает dict с замерами."""
-    m_num, me, ae = METHODS[method]
+def parse_run(method, shift, output, std, img):
+    """Распарсить вывод одного прогона в dict замеров или None, если
+    каких-то значений нет (внутр. эталоны / время / память)."""
+    internal = INTERNAL_RE.search(output)
+    elapsed = ELAPSED_RE.search(output)
+    maxrss = MAXRSS_RE.search(output)
+    if not internal or not elapsed or not maxrss:
+        return None
+    comp_bytes = (std.stat().st_size if std.exists() else 0) + (
+        img.stat().st_size if img.exists() else 0
+    )
+    return {
+        "method": method,
+        "shift": shift,
+        "time_str": elapsed.group(1),
+        "time_sec": elapsed_to_sec(elapsed.group(1)),
+        "mem_bytes": int(maxrss.group(1)) * 1024,
+        "internal": int(internal.group(1)),
+        "comp_bytes": comp_bytes,
+    }
+
+
+def run_one(method, shift, sc, me, ae):
+    """Один прогон компрессора. Возвращает dict с замерами.
+
+    Resume: если у прогона уже есть валидный output.txt и оба .gsd —
+    переиспользует их без повторного (многочасового) запуска."""
+    m_num = METHODS[method][0]
     binary = ROOT / ".build" / "hsi_compressor"
     hdr = ROOT / ".data" / "hsi.hdr"
     dat = ROOT / ".data" / "all.dat"
@@ -62,6 +88,15 @@ def run_one(method, shift, sc):
     out_dir.mkdir(parents=True, exist_ok=True)
     std = out_dir / "standarts.gsd"
     img = out_dir / "image.gsd"
+    out_txt = out_dir / "output.txt"
+
+    if out_txt.exists() and std.exists() and img.exists():
+        cached = parse_run(method, shift, out_txt.read_text(encoding="utf-8"),
+                           std, img)
+        if cached:
+            print(f"[{method} S{shift}] уже посчитан — переиспользую "
+                  f"({cached['time_str']}, внутр.={cached['internal']})")
+            return cached
 
     cmd = [
         "/usr/bin/time", "-v",
@@ -70,34 +105,21 @@ def run_one(method, shift, sc):
         "-S", str(shift), "-c", sc, "-w", "1", "-r", "0",
         "-o", str(std), "-i", str(img),
     ]
-    print(f"[{method} S{shift}] sc={sc} ... ", end="", flush=True)
+    print(f"[{method} S{shift}] sc={sc} me={me} ae={ae} ... ",
+          end="", flush=True)
     res = subprocess.run(cmd, capture_output=True, text=True)
     output = res.stdout + res.stderr
-    (out_dir / "output.txt").write_text(output, encoding="utf-8")
+    out_txt.write_text(output, encoding="utf-8")
 
-    internal = INTERNAL_RE.search(output)
-    elapsed = ELAPSED_RE.search(output)
-    maxrss = MAXRSS_RE.search(output)
-    if res.returncode != 0 or not internal or not elapsed or not maxrss:
+    row = parse_run(method, shift, output, std, img)
+    if res.returncode != 0 or row is None:
         raise RuntimeError(
             f"[{method} S{shift}] прогон не удался (код {res.returncode}); "
-            f"см. {out_dir/'output.txt'}"
+            f"см. {out_txt}"
         )
-
-    comp_bytes = (std.stat().st_size if std.exists() else 0) + (
-        img.stat().st_size if img.exists() else 0
-    )
-    sec = elapsed_to_sec(elapsed.group(1))
-    print(f"{elapsed.group(1)} ({sec:.1f} c), внутр.={internal.group(1)}")
-    return {
-        "method": method,
-        "shift": shift,
-        "time_str": elapsed.group(1),
-        "time_sec": sec,
-        "mem_bytes": int(maxrss.group(1)) * 1024,
-        "internal": int(internal.group(1)),
-        "comp_bytes": comp_bytes,
-    }
+    print(f"{row['time_str']} ({row['time_sec']:.1f} c), "
+          f"внутр.={row['internal']}")
+    return row
 
 
 def write_table(rows, dat_bytes, path):
@@ -136,6 +158,12 @@ def main():
     for m in METHODS:
         ap.add_argument(f"--sc-{m.lower()}", metavar="X",
                         help=f"коэффициент sc для метода {m}")
+        ap.add_argument(f"--me-{m.lower()}", metavar="P",
+                        help=f"порог me для метода {m} "
+                             f"(по умолчанию {METHODS[m][1]})")
+        ap.add_argument(f"--ae-{m.lower()}", metavar="P",
+                        help=f"порог ae для метода {m} "
+                             f"(по умолчанию {METHODS[m][2]})")
     args = ap.parse_args()
 
     binary = ROOT / ".build" / "hsi_compressor"
@@ -146,6 +174,10 @@ def main():
         sys.exit(f"Не найден входной файл {dat}")
 
     sc_map = {m: getattr(args, f"sc_{m.lower()}") for m in METHODS}
+    me_map = {m: getattr(args, f"me_{m.lower()}") or METHODS[m][1]
+              for m in METHODS}
+    ae_map = {m: getattr(args, f"ae_{m.lower()}") or METHODS[m][2]
+              for m in METHODS}
     missing = [m for m in args.methods if not sc_map[m]]
     if missing:
         sys.exit("не задан sc для методов: "
@@ -155,7 +187,8 @@ def main():
     rows = []
     for method in args.methods:
         for shift in (0, 1):
-            rows.append(run_one(method, shift, sc_map[method]))
+            rows.append(run_one(method, shift, sc_map[method],
+                                me_map[method], ae_map[method]))
 
     out_dir = ROOT / "runs_bench"
     out_dir.mkdir(parents=True, exist_ok=True)

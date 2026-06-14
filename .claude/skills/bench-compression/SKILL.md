@@ -27,8 +27,9 @@ KEKM и обоих режимов сдвига эталонов (`-S 0` и `-S 1
 и `-r 0` (RGB не нужен), пути GSD разводятся по `runs_bench/<METHOD>_S<shift>/`.
 Размеры берутся из `hsi.hdr` (1032×8955×224, byte order 1) — без `-s/-l/-b`.
 
-Пороги `me/ae` по методу те же, что в refining-sc:
-NT/ST — `--me 0.8 --ae 0.2`, OT/AT — `--me 1.6 --ae 0.4`.
+Пороги `me/ae` по методу по умолчанию те же, что в refining-sc:
+NT/ST — `--me 0.8 --ae 0.2`, OT/AT — `--me 1.6 --ae 0.4`. Их можно
+переопределить для каждого метода флагами `--me-<метод>` / `--ae-<метод>`.
 
 ## Как запустить
 
@@ -43,6 +44,10 @@ python3 .claude/skills/bench-compression/bench_runs.py \
 # только часть методов
 python3 .claude/skills/bench-compression/bench_runs.py \
     --methods OT AT --sc-ot 1.066 --sc-at 1.6
+
+# с переопределением порогов me/ae для метода
+python3 .claude/skills/bench-compression/bench_runs.py \
+    --methods NT --sc-nt 1.128 --me-nt 1.0 --ae-nt 0.3
 ```
 
 Перед запуском проект должен быть собран (`.build/hsi_compressor`), причём из
